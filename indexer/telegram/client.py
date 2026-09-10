@@ -1,41 +1,50 @@
 import logging
-from typing import Optional
+from typing import Optional, Dict
 from telethon import TelegramClient
 from database.config import get_settings
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
-_telethon_client: Optional[TelegramClient] = None
+_telethon_clients: Dict[str, TelegramClient] = {}
 
 
-def get_telethon_client() -> TelegramClient:
-    """Get or create singleton Telethon client instance."""
-    global _telethon_client
-    if _telethon_client is None:
-        _telethon_client = TelegramClient(
-            settings.TELEGRAM_SESSION_NAME,
+def get_telethon_client(session_name: Optional[str] = None) -> TelegramClient:
+    """Get or create Telethon client instance for the given session name."""
+    global _telethon_clients
+    settings = get_settings()
+    session = session_name or settings.TELEGRAM_SESSION_NAME
+
+    if session not in _telethon_clients:
+        _telethon_clients[session] = TelegramClient(
+            session,
             settings.TELEGRAM_API_ID,
             settings.TELEGRAM_API_HASH
         )
-    return _telethon_client
+    return _telethon_clients[session]
 
 
-async def start_telethon_client() -> TelegramClient:
-    """Connect and start the Telethon client."""
-    client = get_telethon_client()
+async def start_telethon_client(session_name: Optional[str] = None) -> TelegramClient:
+    """Connect and start the Telethon client for the given session."""
+    client = get_telethon_client(session_name)
     if not client.is_connected():
         await client.connect()
         if not await client.is_user_authorized():
             logger.warning(
-                "Telethon client is not authorized! Please run the interactive login script once to authenticate."
+                f"Telethon client '{session_name or 'default'}' is not authorized! "
+                "Please run the interactive login script once to authenticate."
             )
     return client
 
 
-async def stop_telethon_client() -> None:
+async def stop_telethon_client(session_name: Optional[str] = None) -> None:
     """Disconnect Telethon client cleanly."""
-    global _telethon_client
-    if _telethon_client and _telethon_client.is_connected():
-        await _telethon_client.disconnect()
-        logger.info("Telethon client disconnected.")
+    global _telethon_clients
+    settings = get_settings()
+    session = session_name or settings.TELEGRAM_SESSION_NAME
+
+    if session in _telethon_clients:
+        client = _telethon_clients[session]
+        if client.is_connected():
+            await client.disconnect()
+            logger.info(f"Telethon client '{session}' disconnected.")
+        del _telethon_clients[session]

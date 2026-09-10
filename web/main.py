@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from database.config import get_settings
-from database.connection import init_db
+from database.connection import check_db_ready, init_db
 from web.routes import download_router
 
 logging.basicConfig(
@@ -20,7 +20,12 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("FastAPI Web Server starting...")
-    await init_db()
+    try:
+        await check_db_ready()
+        logger.info("Database schema and connectivity verified.")
+    except Exception as e:
+        logger.warning(f"Database readiness check encountered issue ({e}). Running bootstrap fallback...")
+        await init_db()
     yield
     logger.info("FastAPI Web Server stopped.")
 
@@ -32,13 +37,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+# Restrict CORS to configured domain and localhost
+allowed_origins = [
+    settings.base_web_url,
+    f"http://localhost:{settings.WEB_PORT}",
+    f"http://127.0.0.1:{settings.WEB_PORT}",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["Content-Type"],
 )
 
 # Static files

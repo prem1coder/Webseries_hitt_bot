@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     TELEGRAM_API_ID: int = Field(default=0)
     TELEGRAM_API_HASH: str = Field(default="")
     TELEGRAM_SESSION_NAME: str = Field(default="archive_indexer")
+    TELEGRAM_STREAM_SESSION_NAME: str = Field(default="stream_service")
 
     # Channels
     ARCHIVE_CHANNEL_ID: Union[int, str] = Field(default="")

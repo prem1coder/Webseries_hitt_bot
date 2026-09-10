@@ -2,6 +2,7 @@ from typing import Optional, List, Tuple
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from database.models import File, Content, Episode, Season
 
 
@@ -45,15 +46,21 @@ class FileRepository:
         duration_seconds: Optional[int] = None,
         audio: Optional[str] = None
     ) -> Tuple[File, bool]:
-        """Insert or update file record with duplicate protection."""
+        """
+        Insert or update file record with race-safe duplicate protection and explicit None checks.
+        """
         existing = await self.get_by_telegram_message(telegram_channel_id, telegram_message_id)
         if existing:
-            # Update metadata if missing
-            existing.quality = quality or existing.quality
-            existing.file_name = file_name or existing.file_name
-            existing.file_size_bytes = file_size_bytes or existing.file_size_bytes
-            existing.duration_seconds = duration_seconds or existing.duration_seconds
-            existing.audio = audio or existing.audio
+            if quality is not None:
+                existing.quality = quality
+            if file_name is not None:
+                existing.file_name = file_name
+            if file_size_bytes is not None:
+                existing.file_size_bytes = file_size_bytes
+            if duration_seconds is not None:
+                existing.duration_seconds = duration_seconds
+            if audio is not None:
+                existing.audio = audio
             return existing, False
 
         new_file = File(
@@ -67,6 +74,25 @@ class FileRepository:
             telegram_channel_id=telegram_channel_id,
             telegram_message_id=telegram_message_id
         )
-        self.session.add(new_file)
-        await self.session.flush()
-        return new_file, True
+
+        try:
+            async with self.session.begin_nested():
+                self.session.add(new_file)
+                await self.session.flush()
+            return new_file, True
+        except IntegrityError:
+            # Concurrent insert race condition caught by UNIQUE(telegram_channel_id, telegram_message_id)
+            existing = await self.get_by_telegram_message(telegram_channel_id, telegram_message_id)
+            if existing:
+                if quality is not None:
+                    existing.quality = quality
+                if file_name is not None:
+                    existing.file_name = file_name
+                if file_size_bytes is not None:
+                    existing.file_size_bytes = file_size_bytes
+                if duration_seconds is not None:
+                    existing.duration_seconds = duration_seconds
+                if audio is not None:
+                    existing.audio = audio
+                return existing, False
+            raise

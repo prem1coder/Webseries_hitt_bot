@@ -83,3 +83,29 @@ class TestFilenameParser:
         assert FilenameParser.normalize_title("Money Heist: Korea") == "money heist korea"
         assert FilenameParser.normalize_title("Spider-Man: No Way Home") == "spider man no way home"
         assert FilenameParser.normalize_title("Mr. Robot") == "mr robot"
+
+    def test_series_s02_e08_separated(self):
+        filename = "House of the Dragon S02 E08 720p WEB-DL.mkv"
+        parsed = FilenameParser.parse(filename)
+        assert parsed.content_type == "series"
+        assert "house of the dragon" in parsed.normalized_title
+        assert parsed.season_number == 2
+        assert parsed.episode_number == 8
+        assert parsed.quality == "720p"
+
+    def test_series_season_pack_no_episode_number(self):
+        filename = "Game of Thrones S01 Complete 1080p BluRay x264.mkv"
+        parsed = FilenameParser.parse(filename)
+        assert parsed.content_type == "series"
+        assert "game of thrones" in parsed.normalized_title
+        assert parsed.season_number == 1
+        assert parsed.episode_number is None  # Season pack must not set fake episode number
+
+    def test_movie_parenthesis_year_and_missing_quality(self):
+        filename = "Dune Part Two (2024) Hindi-English DD5.1.mkv"
+        parsed = FilenameParser.parse(filename)
+        assert parsed.content_type == "movie"
+        assert "dune part two" in parsed.normalized_title
+        assert parsed.year == 2024
+        assert parsed.quality == "Unknown"
+        assert parsed.audio is not None and "Hindi" in parsed.audio

@@ -7,6 +7,7 @@ from aiogram.enums import ParseMode
 from database.config import get_settings
 from database.connection import init_db
 from bot.handlers import start_router, search_router, callbacks_router
+from bot.services.membership import MembershipService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,6 +18,19 @@ logger = logging.getLogger("bot")
 
 async def main():
     settings = get_settings()
+
+    if not settings.BOT_TOKEN:
+        logger.critical("Fatal: BOT_TOKEN is not set in environment or configuration.")
+        raise ValueError("BOT_TOKEN is required to start the bot.")
+
+    main_channel_id = MembershipService.get_target_channel_id()
+    if main_channel_id is None:
+        logger.warning(
+            "MAIN_CHANNEL_ID is not configured as a valid numeric Telegram chat ID. "
+            "Membership verification will fail-closed for all users until configured."
+        )
+    else:
+        logger.info(f"Configured MAIN_CHANNEL_ID for membership verification: {main_channel_id}")
 
     logger.info("Initializing database schema...")
     await init_db()

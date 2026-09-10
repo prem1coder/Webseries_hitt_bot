@@ -1,0 +1,32 @@
+# Environment and secrets
+.env
+.env.*
+*.env
+
+# Telegram sessions
+*.session
+*.session-journal
+archive_indexer.session*
+stream_service.session*
+
+# Git and IDE
+.git
+.gitignore
+.dockerignore
+.idea
+.vscode
+
+# Python virtual environment and caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Local databases, storage and logs
+postgres_data/
+*.log
+*.sqlite
+*.db

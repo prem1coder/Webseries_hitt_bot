@@ -168,11 +168,32 @@ sudo systemctl reload nginx
 
 ---
 
+---
+
 ## 🔒 Security & Performance Best Practices
-1. **Never commit `.env` or session files (`*.session`)**.
-2. **Short-Lived Download Tokens**: Tokens expire automatically after 15 minutes and cannot be tampered with due to HMAC-SHA256 signatures.
-3. **Chunked MTProto Streaming**: Web player reads video byte ranges on demand, preventing RAM spikes and avoiding disk storage on VPS.
-4. **Parameterized SQL & Connection Pooling**: Prevents SQL injection and maximizes concurrent database throughput.
+1. **Never commit `.env` or session files (`*.session`)**: Kept in `.gitignore` and `.dockerignore`.
+2. **Fail-Closed Membership Verification**: If `MAIN_CHANNEL_ID` is missing, misconfigured as a URL, or if the Telegram API check fails, access is denied.
+3. **Hardened HMAC-SHA256 Tokens**: Versioned (`v: 1`), typed (`typ: "download"`), positive integer IDs, lifetime-capped, and verified with constant-time comparison.
+4. **Chunked MTProto Streaming**: Web player reads video byte ranges on demand, preventing RAM spikes and avoiding disk storage on VPS.
+5. **Separated Telethon Sessions**: Indexer and Web services use independent `.session` files to prevent SQLite database lock contention.
+6. **Non-Root Containers**: Docker containers run under unprivileged user `appuser`.
+7. **Parameterized SQL & Connection Pooling**: Prevents SQL injection and maximizes concurrent database throughput.
+
+---
+
+## 🚦 Production Approval Gates
+
+Before VPS deployment, ensure all gates pass:
+- [x] No exposed or real credentials in GitHub repository.
+- [x] `.env` and `*.session` excluded via `.gitignore` and `.dockerignore`.
+- [x] Docker images run as non-root (`appuser`) without embedded secrets.
+- [x] Database schema initializes cleanly via `001_schema.sql`.
+- [x] All 44 automated unit & security tests pass.
+- [x] Exact normalized title search matches V1 requirements.
+- [x] Series season packs handled safely without creating fake E01 episodes.
+- [x] Non-member cannot receive download tokens; API failures deny access.
+- [x] Web endpoints reject tampered or expired tokens.
+- [x] Web streaming runs through a dedicated authenticated session.
 
 ---
 

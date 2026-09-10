@@ -53,10 +53,17 @@ class IndexerService:
 
         episode_id: Optional[int] = None
 
-        # 2. If Series, find or create Season and Episode
+        # 2. If Series, only create Season and Episode when a real episode number was parsed
         if parsed.content_type == "series":
+            if parsed.episode_number is None:
+                logger.warning(
+                    f"Skipping series file without parsed episode number (possible season pack/ambiguous): "
+                    f"'{media_info.file_name}' (Msg: {channel_id}:{message.id})"
+                )
+                return None
+
             season_num = parsed.season_number or 1
-            episode_num = parsed.episode_number or 1
+            episode_num = parsed.episode_number
 
             season = await content_repo.find_or_create_season(
                 content_id=content.id,

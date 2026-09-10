@@ -23,17 +23,19 @@ class ContentRepository:
         return result.scalar_one_or_none()
 
     async def search_by_title(self, query: str, limit: int = 20) -> List[Content]:
-        """Search contents using normalized title substring or exact matching."""
+        """
+        Search contents using exact normalized title matching (V1 requirement).
+        Matches after stripping punctuation, special characters, and extra whitespace.
+        """
         norm_query = self.normalize_title(query)
         if not norm_query:
             return []
 
         stmt = (
             select(Content)
-            .where(Content.normalized_title.ilike(f"%{norm_query}%"))
+            .where(Content.normalized_title == norm_query)
             .order_by(
-                # Exact match first, then alphabetically
-                (Content.normalized_title == norm_query).desc(),
+                Content.year.desc().nullslast(),
                 Content.title.asc()
             )
             .limit(limit)

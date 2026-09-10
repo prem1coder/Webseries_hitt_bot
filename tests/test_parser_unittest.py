@@ -103,6 +103,20 @@ class TestFilenameParserUnittest(unittest.TestCase):
         self.assertEqual(FilenameParser.normalize_title("Spider-Man: No Way Home"), "spider man no way home")
         self.assertEqual(FilenameParser.normalize_title("Mr. Robot"), "mr robot")
 
+    def test_season_pack_no_false_episode(self):
+        filename = "Chernobyl.S01.Complete.1080p.BluRay.x264.mkv"
+        parsed = FilenameParser.parse(filename)
+        self.assertEqual(parsed.content_type, "series")
+        self.assertEqual(parsed.season_number, 1)
+        self.assertIsNone(parsed.episode_number)
+
+    def test_separated_s02_e08(self):
+        filename = "House.of.the.Dragon.S02.E08.720p.mkv"
+        parsed = FilenameParser.parse(filename)
+        self.assertEqual(parsed.content_type, "series")
+        self.assertEqual(parsed.season_number, 2)
+        self.assertEqual(parsed.episode_number, 8)
+
 
 if __name__ == "__main__":
     unittest.main()

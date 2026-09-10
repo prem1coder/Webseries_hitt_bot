@@ -8,16 +8,15 @@ logger = logging.getLogger(__name__)
 
 
 async def main():
-    settings = get_settings()
     logger.info("Initializing Telethon client for interactive authentication...")
-    logger.info(f"API ID: {settings.TELEGRAM_API_ID}")
-    logger.info(f"Session Name: {settings.TELEGRAM_SESSION_NAME}")
 
     client = get_telethon_client()
     await client.start()
 
-    me = await client.get_me()
-    logger.info(f"Successfully authenticated as: {me.first_name} (ID: {me.id}, Username: @{me.username})")
+    if await client.is_user_authorized():
+        logger.info("Successfully authenticated Telethon session.")
+    else:
+        logger.error("Authentication failed or incomplete.")
     await client.disconnect()
 
 

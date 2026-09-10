@@ -25,10 +25,20 @@ AsyncSessionFactory = async_sessionmaker(
 )
 
 
+from sqlalchemy import text
+
+
 async def init_db():
     """Create all tables if they do not exist (useful for test and bootstrap)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def check_db_ready() -> bool:
+    """Verify that the database is reachable and schema tables exist."""
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT 1 FROM contents LIMIT 1;"))
+    return True
 
 
 @asynccontextmanager

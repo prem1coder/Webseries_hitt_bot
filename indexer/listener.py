@@ -43,7 +43,14 @@ async def register_listener(client: TelegramClient):
     @client.on(events.NewMessage(chats=channel_id))
     async def handler(event: events.NewMessage.Event):
         message: Message = event.message
-        logger.info(f"New message received in archive channel (ID: {message.id}). Inspecting...")
+        raw_chat_id = event.chat_id or channel_id
+        # Canonical -100 ID
+        if not str(raw_chat_id).startswith("-100"):
+            canonical_id = int(f"-100{abs(int(raw_chat_id))}")
+        else:
+            canonical_id = int(raw_chat_id)
+
+        logger.info(f"New message received in archive channel {canonical_id} (ID: {message.id}). Inspecting...")
 
         try:
             async with get_db_session() as session:
@@ -51,7 +58,7 @@ async def register_listener(client: TelegramClient):
                 file_repo = FileRepository(session)
 
                 file_id = await indexer_service.index_single_message(
-                    channel_id=channel_id,
+                    channel_id=canonical_id,
                     message=message,
                     content_repo=content_repo,
                     file_repo=file_repo

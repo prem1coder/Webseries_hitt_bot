@@ -2,6 +2,7 @@ import logging
 from typing import AsyncGenerator, Optional
 from telethon import TelegramClient
 from telethon.tl.types import MessageMediaDocument
+from database.config import get_settings
 from indexer.telegram.client import get_telethon_client
 
 logger = logging.getLogger(__name__)
@@ -16,11 +17,16 @@ class TelegramStreamer:
         chunk_size: int = 1024 * 1024  # 1MB chunks
     ) -> AsyncGenerator[bytes, None]:
         """
-        Stream media directly from Telegram MTProto servers chunk-by-chunk without saving to VPS disk.
+        Stream media directly from Telegram MTProto servers chunk-by-chunk using a dedicated web session.
         """
-        client = get_telethon_client()
+        settings = get_settings()
+        client = get_telethon_client(settings.TELEGRAM_STREAM_SESSION_NAME)
         if not client.is_connected():
             await client.connect()
+
+        if not await client.is_user_authorized():
+            logger.error(f"Stream session '{settings.TELEGRAM_STREAM_SESSION_NAME}' is not authorized.")
+            raise RuntimeError(f"Web streaming session '{settings.TELEGRAM_STREAM_SESSION_NAME}' is not authorized.")
 
         try:
             entity = await client.get_entity(channel_id)

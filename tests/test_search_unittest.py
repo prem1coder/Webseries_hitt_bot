@@ -98,11 +98,20 @@ class TestSearchEngine(unittest.IsolatedAsyncioTestCase):
             self.assertIn("720p", qualities)
             self.assertIn("1080p", qualities)
 
-            # Search series
-            series_results = await content_repo.search_by_title("breaking")
+            # V1 Requirement: Partial substring must NOT match
+            partial_results = await content_repo.search_by_title("breaking")
+            self.assertEqual(len(partial_results), 0)
+
+            # Exact normalized title match (case-insensitive, punctuation normalized)
+            series_results = await content_repo.search_by_title("Breaking Bad")
             self.assertEqual(len(series_results), 1)
             self.assertEqual(series_results[0].title, "Breaking Bad")
             self.assertEqual(series_results[0].content_type, "series")
+
+            # With extra whitespace and punctuation
+            punct_results = await content_repo.search_by_title("  breaking   bad!!  ")
+            self.assertEqual(len(punct_results), 1)
+            self.assertEqual(punct_results[0].id, series_results[0].id)
 
             # Check series seasons
             seasons = await content_repo.get_series_seasons(series_results[0].id)

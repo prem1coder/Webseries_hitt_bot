@@ -41,12 +41,19 @@ services:
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./stream_service.session:/app/stream_service.session
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - hitt_net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   indexer:
     build:
