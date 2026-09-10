@@ -11,7 +11,7 @@ class Base(DeclarativeBase):
 class Content(Base):
     __tablename__ = "contents"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_title: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     content_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'movie' or 'series'
@@ -33,8 +33,8 @@ class Season(Base):
         UniqueConstraint("content_id", "season_number", name="uq_seasons_content_season"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    content_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contents.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    content_id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("contents.id", ondelete="CASCADE"), nullable=False)
     season_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -50,8 +50,8 @@ class Episode(Base):
         UniqueConstraint("season_id", "episode_number", name="uq_episodes_season_episode"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    season_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    season_id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
     episode_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     normalized_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -69,9 +69,9 @@ class File(Base):
         UniqueConstraint("telegram_channel_id", "telegram_message_id", name="idx_telegram_message_unique"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    content_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contents.id", ondelete="CASCADE"), nullable=False, index=True)
-    episode_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True, index=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    content_id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("contents.id", ondelete="CASCADE"), nullable=False, index=True)
+    episode_id: Mapped[Optional[int]] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True, index=True)
     quality: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     file_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     file_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
