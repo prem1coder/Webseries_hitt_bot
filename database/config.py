@@ -7,26 +7,26 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     # Telegram Bot API
-    BOT_TOKEN: str = Field(default="123456789:ABCDefghIJKlmnoPQRstuvWXYZ")
+    BOT_TOKEN: str = Field(default="")
 
     # Telegram MTProto (Telethon)
-    TELEGRAM_API_ID: int = Field(default=12345678)
-    TELEGRAM_API_HASH: str = Field(default="0123456789abcdef0123456789abcdef")
+    TELEGRAM_API_ID: int = Field(default=0)
+    TELEGRAM_API_HASH: str = Field(default="")
     TELEGRAM_SESSION_NAME: str = Field(default="archive_indexer")
 
     # Channels
-    ARCHIVE_CHANNEL_ID: Union[int, str] = Field(default=-1001234567890)
-    MAIN_CHANNEL_ID: Union[int, str] = Field(default=-1009876543210)
+    ARCHIVE_CHANNEL_ID: Union[int, str] = Field(default="")
+    MAIN_CHANNEL_ID: Union[int, str] = Field(default="")
     MAIN_CHANNEL_INVITE_LINK: str = Field(default="https://t.me/your_channel_invite")
 
     # Database
-    DATABASE_URL: str = Field(default="postgresql+asyncpg://video_admin:change_this_password@localhost:5432/video_bot")
+    DATABASE_URL: str = Field(default="postgresql+asyncpg://postgres:password@localhost:5432/video_bot")
     POSTGRES_DB: str = Field(default="video_bot")
-    POSTGRES_USER: str = Field(default="video_admin")
-    POSTGRES_PASSWORD: str = Field(default="change_this_password")
+    POSTGRES_USER: str = Field(default="postgres")
+    POSTGRES_PASSWORD: str = Field(default="password")
 
     # Security & Tokens
-    DOWNLOAD_SECRET: str = Field(default="super_secret_signing_key_for_video_download_tokens_2026")
+    DOWNLOAD_SECRET: str = Field(default="default_insecure_key_change_in_production")
     TOKEN_EXPIRY_MINUTES: int = Field(default=15)
 
     # Web Server

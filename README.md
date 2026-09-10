@@ -78,34 +78,31 @@ pip install -r requirements.txt
 ```
 
 ### 3. Environment Variables (`.env`)
-Copy `.env.example` to `.env` and fill in your credentials:
-```ini
-# Telegram Bot API (from @BotFather)
-BOT_TOKEN=123456789:ABCDefghIJKlmnoPQRstuvWXYZ
+Create your `.env` configuration by copying `.env.example`:
 
-# Telegram MTProto (from https://my.telegram.org)
-TELEGRAM_API_ID=12345678
-TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef
-TELEGRAM_SESSION_NAME=archive_indexer
+```bash
+# On Linux / macOS:
+cp .env.example .env
 
-# Target Channels
-ARCHIVE_CHANNEL_ID=-1001234567890
-MAIN_CHANNEL_ID=-1009876543210
-MAIN_CHANNEL_INVITE_LINK=https://t.me/your_channel_invite
-
-# Database Connection
-DATABASE_URL=postgresql+asyncpg://video_admin:change_this_password@localhost:5432/video_bot
-
-# Security Secret (32+ characters random string)
-DOWNLOAD_SECRET=super_secret_signing_key_for_video_download_tokens_2026
-TOKEN_EXPIRY_MINUTES=15
-
-# Web Settings
-DOMAIN=localhost:8000
-WEB_HOST=0.0.0.0
-WEB_PORT=8000
-USE_HTTPS=false
+# On Windows PowerShell:
+Copy-Item .env.example .env
 ```
+
+Open `.env` and fill in your credentials:
+
+| Variable | Description | Source / Notes |
+| :--- | :--- | :--- |
+| `BOT_TOKEN` | Telegram Bot API Token | Obtained from [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_API_ID` | Telegram MTProto API ID | Obtained from [my.telegram.org](https://my.telegram.org) |
+| `TELEGRAM_API_HASH` | Telegram MTProto API Hash | Obtained from [my.telegram.org](https://my.telegram.org) |
+| `TELEGRAM_SESSION_NAME` | MTProto Session Name | Default: `archive_indexer` |
+| `ARCHIVE_CHANNEL_ID` | Target Telegram Archive Channel ID or Invite Link | Your private video repository channel |
+| `MAIN_CHANNEL_ID` | Main Telegram Channel ID or Invite Link | Channel required for mandatory subscription check |
+| `MAIN_CHANNEL_INVITE_LINK` | Invite link shown to users who need to join | Channel invite link |
+| `DATABASE_URL` | PostgreSQL Async Connection String | Format: `postgresql+asyncpg://user:password@host:5432/dbname` |
+| `DOWNLOAD_SECRET` | Secure random 32+ character signing key | Generated secret string (e.g. `openssl rand -hex 32`) |
+| `TOKEN_EXPIRY_MINUTES` | Validity period of signed download links | Default: `15` |
+| `DOMAIN` | Domain or host running the download portal | e.g. `localhost:8000` or `yourdomain.com` |
 
 ### 4. Start Local PostgreSQL Database
 ```bash
