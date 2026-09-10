@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: hitt_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-video_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-video_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_this_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - hitt_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-video_admin} -d ${POSTGRES_DB:-video_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    container_name: hitt_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hitt_net
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: hitt_web
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hitt_net
+
+  indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile.indexer
+    container_name: hitt_indexer
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./archive_indexer.session:/app/archive_indexer.session
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hitt_net
+
+volumes:
+  postgres_data:
+
+networks:
+  hitt_net:
+    driver: bridge

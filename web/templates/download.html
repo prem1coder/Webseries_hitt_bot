@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Fast Download & Stream</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-glow"></div>
+    <main class="container">
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🎬</span>
+                <span class="logo-text">Webseries<span>Hitt</span></span>
+            </div>
+            <span class="badge status-badge">⚡ Ultra Fast Download</span>
+        </header>
+
+        {% if error %}
+        <section class="card error-card">
+            <div class="error-icon">⚠️</div>
+            <h2>Access Link Expired or Invalid</h2>
+            <p>{{ error }}</p>
+            <a href="https://t.me/{{ bot_username }}" class="btn btn-primary">🔄 Return to Telegram Bot</a>
+        </section>
+        {% else %}
+        <section class="card media-card">
+            <div class="media-header">
+                <span class="type-badge">{{ file.content.content_type | upper }}</span>
+                <h1 class="media-title">{{ title }}</h1>
+                {% if subtitle %}
+                <h3 class="media-subtitle">{{ subtitle }}</h3>
+                {% endif %}
+            </div>
+
+            <!-- Video Player Preview -->
+            <div class="player-wrapper">
+                <video controls preload="metadata" poster="{{ file.content.poster_url or '' }}">
+                    <source src="/stream/{{ token }}" type="video/mp4">
+                    Your browser does not support HTML5 video streaming.
+                </video>
+            </div>
+
+            <!-- Metadata Info Grid -->
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="label">Resolution</span>
+                    <span class="value highlight">{{ file.quality or 'HD' }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">File Size</span>
+                    <span class="value">{{ (file.file_size_bytes / (1024 * 1024)) | round(1) if file.file_size_bytes else 'N/A' }} MB</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Audio</span>
+                    <span class="value">{{ file.audio or 'Original Audio' }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Duration</span>
+                    <span class="value">{{ (file.duration_seconds // 60) if file.duration_seconds else 'N/A' }} mins</span>
+                </div>
+            </div>
+
+            <div class="filename-box">
+                <span class="file-icon">📄</span>
+                <span class="filename-text">{{ file.file_name }}</span>
+            </div>
+
+            <!-- Download Actions -->
+            <div class="actions">
+                <a href="/file/{{ token }}" class="btn btn-primary btn-large">
+                    <span class="btn-icon">⬇️</span>
+                    <span>Download File Directly</span>
+                </a>
+                <a href="/stream/{{ token }}" target="_blank" class="btn btn-secondary">
+                    <span class="btn-icon">▶️</span>
+                    <span>Direct Stream URL</span>
+                </a>
+            </div>
+
+            <footer class="token-expiry">
+                ⏱ Link expires in <span id="countdown">15</span> minutes. Generated exclusively for your session.
+            </footer>
+        </section>
+        {% endif %}
+
+        <footer class="site-footer">
+            <p>© 2026 Webseries Hitt Bot • Powered by Telegram MTProto & FastAPI</p>
+        </footer>
+    </main>
+</body>
+</html>
