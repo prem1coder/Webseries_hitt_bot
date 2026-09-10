@@ -7,9 +7,7 @@ from database.config import get_settings
 from database.connection import get_db_session, init_db
 from database.repositories.content_repo import ContentRepository
 from database.repositories.file_repo import FileRepository
-from indexer.parser.filename_parser import FilenameParser
-from indexer.telegram.client import get_telethon_client, start_telethon_client, stop_telethon_client
-from indexer.telegram.inspector import TelegramMessageInspector
+from indexer.telegram.client import start_telethon_client, stop_telethon_client
 from indexer.services.indexer_service import IndexerService
 
 logging.basicConfig(

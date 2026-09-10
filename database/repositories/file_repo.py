@@ -1,9 +1,9 @@
-from typing import Optional, List, Tuple
+from typing import Optional, Tuple
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from database.models import File, Content, Episode, Season
+from database.models import File, Episode
 
 
 class FileRepository:

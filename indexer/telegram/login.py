@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from database.config import get_settings
 from indexer.telegram.client import get_telethon_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

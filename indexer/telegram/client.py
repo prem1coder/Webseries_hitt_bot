@@ -10,7 +10,6 @@ _telethon_clients: Dict[str, TelegramClient] = {}
 
 def get_telethon_client(session_name: Optional[str] = None) -> TelegramClient:
     """Get or create Telethon client instance for the given session name."""
-    global _telethon_clients
     settings = get_settings()
     session = session_name or settings.TELEGRAM_SESSION_NAME
 
@@ -38,7 +37,6 @@ async def start_telethon_client(session_name: Optional[str] = None) -> TelegramC
 
 async def stop_telethon_client(session_name: Optional[str] = None) -> None:
     """Disconnect Telethon client cleanly."""
-    global _telethon_clients
     settings = get_settings()
     session = session_name or settings.TELEGRAM_SESSION_NAME
 

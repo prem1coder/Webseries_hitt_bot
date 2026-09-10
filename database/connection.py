@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from database.config import get_settings
 from database.models import Base
@@ -23,9 +24,6 @@ AsyncSessionFactory = async_sessionmaker(
     expire_on_commit=False,
     autoflush=False
 )
-
-
-from sqlalchemy import text
 
 
 async def init_db():

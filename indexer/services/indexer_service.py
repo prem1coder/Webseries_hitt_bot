@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 from telethon import TelegramClient, errors
 from telethon.tl.types import Message
 
@@ -9,7 +9,7 @@ from database.connection import get_db_session
 from database.repositories.content_repo import ContentRepository
 from database.repositories.file_repo import FileRepository
 from indexer.parser.filename_parser import FilenameParser
-from indexer.telegram.inspector import TelegramMessageInspector, ExtractedMediaInfo
+from indexer.telegram.inspector import TelegramMessageInspector
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

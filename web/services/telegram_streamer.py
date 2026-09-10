@@ -1,7 +1,5 @@
 import logging
-from typing import AsyncGenerator, Optional
-from telethon import TelegramClient
-from telethon.tl.types import MessageMediaDocument
+from typing import AsyncGenerator
 from database.config import get_settings
 from indexer.telegram.client import get_telethon_client
 

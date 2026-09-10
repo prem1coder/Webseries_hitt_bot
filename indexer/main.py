@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from database.connection import init_db
-from indexer.telegram.client import get_telethon_client, start_telethon_client, stop_telethon_client
+from indexer.telegram.client import start_telethon_client, stop_telethon_client
 from indexer.services.indexer_service import IndexerService
 
 logging.basicConfig(

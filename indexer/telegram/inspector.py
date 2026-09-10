@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional
 from telethon.tl.types import (
     Message,
     DocumentAttributeFilename,
