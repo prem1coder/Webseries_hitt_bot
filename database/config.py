@@ -1,4 +1,5 @@
 import os
+from typing import Union
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
@@ -14,8 +15,8 @@ class Settings(BaseSettings):
     TELEGRAM_SESSION_NAME: str = Field(default="archive_indexer")
 
     # Channels
-    ARCHIVE_CHANNEL_ID: int = Field(default=-1001234567890)
-    MAIN_CHANNEL_ID: int = Field(default=-1009876543210)
+    ARCHIVE_CHANNEL_ID: Union[int, str] = Field(default=-1001234567890)
+    MAIN_CHANNEL_ID: Union[int, str] = Field(default=-1009876543210)
     MAIN_CHANNEL_INVITE_LINK: str = Field(default="https://t.me/your_channel_invite")
 
     # Database

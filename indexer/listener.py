@@ -26,7 +26,11 @@ async def register_listener(client: TelegramClient):
     logger.info(f"Setting up real-time upload listener on channel: {target_channel}...")
 
     try:
-        entity = await client.get_entity(target_channel)
+        lookup_channel = target_channel
+        if isinstance(target_channel, str) and (target_channel.lstrip("-").isdigit()):
+            lookup_channel = int(target_channel)
+
+        entity = await client.get_entity(lookup_channel)
         channel_id = getattr(entity, "id", target_channel)
         if hasattr(entity, "id") and not str(channel_id).startswith("-100"):
             channel_id = int(f"-100{channel_id}")

@@ -112,8 +112,12 @@ class IndexerService:
         }
 
         try:
-            entity = await self.client.get_entity(target_channel)
-            actual_channel_id = getattr(entity, "id", target_channel)
+            lookup_channel = target_channel
+            if isinstance(target_channel, str) and (target_channel.lstrip("-").isdigit()):
+                lookup_channel = int(target_channel)
+
+            entity = await self.client.get_entity(lookup_channel)
+            actual_channel_id = getattr(entity, "id", lookup_channel)
             # Ensure proper channel ID format
             if hasattr(entity, "id") and not str(actual_channel_id).startswith("-100"):
                 actual_channel_id = int(f"-100{actual_channel_id}")
