@@ -1,7 +1,12 @@
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient, ASGITransport
 from web.main import app
-from web.routes.download import make_safe_content_disposition, parse_range_header
+from web.routes.download import (
+    make_safe_content_disposition,
+    process_range_header,
+    get_safe_media_type,
+)
 from web.services.token_service import TokenService
 
 
@@ -12,7 +17,7 @@ def test_make_safe_content_disposition():
     header = make_safe_content_disposition(malicious_name, disposition="attachment")
     assert "\r" not in header
     assert "\n" not in header
-    assert 'injected_header: true' not in header or '_' in header
+    assert "injected_header" not in header or "_" in header
 
     # Test standard filename
     normal_header = make_safe_content_disposition("Inception.2010.1080p.mkv", disposition="inline")
@@ -24,29 +29,77 @@ def test_make_safe_content_disposition():
     assert 'filename="video.mp4"' in empty_header
 
 
-def test_parse_range_header():
-    """Test HTTP Range header parsing and boundary validation."""
+def test_get_safe_media_type():
+    """Verify MIME type resolution is derived safely from extension and never trusts user input."""
+    assert get_safe_media_type("video.mp4") == "video/mp4"
+    assert get_safe_media_type("movie.mkv") == "video/x-matroska"
+    assert get_safe_media_type("stream.webm") == "video/webm"
+    assert get_safe_media_type("clip.avi") == "video/x-msvideo"
+    assert get_safe_media_type("film.mov") == "video/quicktime"
+    assert get_safe_media_type("archive.zip") == "application/octet-stream"
+    assert get_safe_media_type("unknown") == "application/octet-stream"
+
+
+def test_process_range_header_valid_ranges():
+    """Test HTTP Range header valid slices: closed, open-ended, and suffix ranges."""
     file_size = 10000
 
-    # Standard range
-    bounds = parse_range_header("bytes=0-499", file_size)
-    assert bounds == (0, 499)
+    # Closed range: bytes=0-499
+    start, end, cr, code = process_range_header("bytes=0-499", file_size)
+    assert (start, end, code) == (0, 499, 206)
+    assert cr == "bytes 0-499/10000"
 
-    # Open-ended range
-    bounds = parse_range_header("bytes=1000-", file_size)
-    assert bounds == (1000, None)
+    # Open-ended range: bytes=1000-
+    start, end, cr, code = process_range_header("bytes=1000-", file_size)
+    assert (start, end, code) == (1000, 9999, 206)
+    assert cr == "bytes 1000-9999/10000"
 
-    # Range exceeding file size
-    bounds = parse_range_header("bytes=0-20000", file_size)
-    assert bounds == (0, 9999)
+    # Suffix range: bytes=-500 (last 500 bytes)
+    start, end, cr, code = process_range_header("bytes=-500", file_size)
+    assert (start, end, code) == (9500, 9999, 206)
+    assert cr == "bytes 9500-9999/10000"
 
-    # Invalid range: start greater than file size
-    assert parse_range_header("bytes=15000-", file_size) is None
+    # Oversized end: bytes=0-20000 capped to file_size - 1
+    start, end, cr, code = process_range_header("bytes=0-20000", file_size)
+    assert (start, end, code) == (0, 9999, 206)
+    assert cr == "bytes 0-9999/10000"
 
-    # Invalid range: negative / garbage
-    assert parse_range_header("bytes=-50-100", file_size) is None
-    assert parse_range_header("invalid_range", file_size) is None
-    assert parse_range_header(None, file_size) is None
+    # No Range header -> 200 OK
+    start, end, cr, code = process_range_header(None, file_size)
+    assert code == 200
+    assert cr is None
+
+
+def test_process_range_header_416_rejections():
+    """Verify unsatisfiable and malformed ranges return HTTP 416 with Content-Range."""
+    file_size = 10000
+
+    # Multi-range rejected with 416
+    with pytest.raises(HTTPException) as exc:
+        process_range_header("bytes=0-100,200-300", file_size)
+    assert exc.value.status_code == 416
+    assert exc.value.headers.get("Content-Range") == f"bytes */{file_size}"
+
+    # Start exceeds file size -> 416
+    with pytest.raises(HTTPException) as exc:
+        process_range_header("bytes=15000-", file_size)
+    assert exc.value.status_code == 416
+    assert exc.value.headers.get("Content-Range") == f"bytes */{file_size}"
+
+    # Start > end -> 416
+    with pytest.raises(HTTPException) as exc:
+        process_range_header("bytes=500-200", file_size)
+    assert exc.value.status_code == 416
+
+    # Empty range -> 416
+    with pytest.raises(HTTPException) as exc:
+        process_range_header("bytes=-", file_size)
+    assert exc.value.status_code == 416
+
+    # Non-numeric range -> 416
+    with pytest.raises(HTTPException) as exc:
+        process_range_header("bytes=abc-def", file_size)
+    assert exc.value.status_code == 416
 
 
 @pytest.mark.asyncio

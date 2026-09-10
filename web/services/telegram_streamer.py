@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from database.config import get_settings
 from indexer.telegram.client import get_telethon_client
 
@@ -7,8 +8,19 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramStreamer:
-    @staticmethod
+    _semaphore: Optional[asyncio.Semaphore] = None
+
+    @classmethod
+    def get_semaphore(cls) -> asyncio.Semaphore:
+        """Get or initialize concurrency semaphore bounded by MAX_CONCURRENT_STREAMS."""
+        if cls._semaphore is None:
+            settings = get_settings()
+            cls._semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_STREAMS)
+        return cls._semaphore
+
+    @classmethod
     async def stream_media_chunks(
+        cls,
         channel_id: int,
         message_id: int,
         offset_bytes: int = 0,
@@ -16,6 +28,7 @@ class TelegramStreamer:
     ) -> AsyncGenerator[bytes, None]:
         """
         Stream media directly from Telegram MTProto servers chunk-by-chunk using a dedicated web session.
+        Protected by a concurrency semaphore to prevent VPS resource exhaustion.
         """
         settings = get_settings()
         client = get_telethon_client(settings.TELEGRAM_STREAM_SESSION_NAME)
@@ -25,6 +38,15 @@ class TelegramStreamer:
         if not await client.is_user_authorized():
             logger.error(f"Stream session '{settings.TELEGRAM_STREAM_SESSION_NAME}' is not authorized.")
             raise RuntimeError(f"Web streaming session '{settings.TELEGRAM_STREAM_SESSION_NAME}' is not authorized.")
+
+        sem = cls.get_semaphore()
+        acquired = False
+        try:
+            await asyncio.wait_for(sem.acquire(), timeout=5.0)
+            acquired = True
+        except asyncio.TimeoutError:
+            logger.error("Streaming capacity saturated (max concurrent streams reached).")
+            raise RuntimeError("Streaming concurrency limit reached. Server busy.")
 
         try:
             entity = await client.get_entity(channel_id)
@@ -46,3 +68,6 @@ class TelegramStreamer:
         except Exception as e:
             logger.error(f"Error streaming message {channel_id}:{message_id} from Telegram: {e}")
             raise
+        finally:
+            if acquired:
+                sem.release()

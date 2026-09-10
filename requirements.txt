@@ -1,27 +1,23 @@
 # Core Frameworks
-aiogram>=3.17.0
-telethon>=1.38.0
-fastapi>=0.115.0
-uvicorn[standard]>=0.34.0
-jinja2>=3.1.5
+aiogram==3.31.0
+telethon==1.44.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+jinja2==3.1.6
 
-# Database & ORM
-asyncpg>=0.30.0
-SQLAlchemy>=2.0.38
-psycopg2-binary>=2.9.10
+# Database & Async PostgreSQL Driver
+asyncpg==0.31.0
+SQLAlchemy==2.0.52
 
-# Configuration & Security
-pydantic>=2.10.0
-pydantic-settings>=2.7.0
-python-dotenv>=1.0.1
-pyjwt>=2.10.0
-cryptography>=44.0.0
+# Configuration & Settings
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.3
 
-# Async IO & Utilities
-aiofiles>=24.1.0
-httpx>=0.28.0
+# Web Client (Test Suite & HTTP Utilities)
+httpx==0.28.1
 
 # Testing & Quality
-pytest>=8.3.0
-pytest-asyncio>=0.25.0
-aiosqlite>=0.20.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
+aiosqlite==0.22.1

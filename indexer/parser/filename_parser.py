@@ -128,6 +128,8 @@ class FilenameParser:
                     episode_num = int(groupdict["episode"])
                 break
 
+        # Policy: Filenames with episode number but no explicit season (e.g., 'Episode 01', 'Ep 02')
+        # default to Season 1 for standard single-season web series conventions.
         if is_series and season_num is None and episode_num is not None:
             season_num = 1
 
@@ -177,9 +179,12 @@ class FilenameParser:
         if not clean_title or len(clean_title) < 2:
             clean_title = cls.clean_text_separators(re.sub(cls.EXTENSIONS, "", raw_name, flags=re.IGNORECASE))
 
-        clean_title = " ".join(word.capitalize() for word in clean_title.split())
+        # Preserve original source casing to protect names like iPhone, IMDb, etc.
+        clean_title = " ".join(clean_title.split())
         normalized_title = cls.normalize_title(clean_title)
 
+        # Policy: Unknown quality is intentionally supported as 'Unknown'
+        # so unflagged media remains accessible to users.
         return ParsedMediaInfo(
             raw_file_name=raw_name,
             title=clean_title,

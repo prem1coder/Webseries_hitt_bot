@@ -15,13 +15,27 @@ def search_results_keyboard(contents: List[Content]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+import re
+
+
+def _quality_sort_key(file_obj: File) -> int:
+    """Sort key for numeric quality ordering (2160p > 1080p > 720p > 480p > Unknown)."""
+    q = (file_obj.quality or "").lower()
+    match = re.search(r"(\d+)", q)
+    if match:
+        return int(match.group(1))
+    return 0
+
+
 def movie_qualities_keyboard(content_id: int, files: List[File]) -> InlineKeyboardMarkup:
-    """Inline keyboard showing available qualities for a movie."""
+    """Inline keyboard showing available qualities for a movie, ordered by resolution descending."""
+    sorted_files = sorted(files, key=_quality_sort_key, reverse=True)
     row = []
     keyboard = []
-    for f in files:
+    for f in sorted_files:
         size_mb = f" ({f.file_size_bytes // (1024 * 1024)}MB)" if f.file_size_bytes else ""
-        row.append(InlineKeyboardButton(text=f"📥 {f.quality or 'Watch'}{size_mb}", callback_data=f"file:{f.id}"))
+        label = f.quality if f.quality and f.quality != "Unknown" else "Watch HD"
+        row.append(InlineKeyboardButton(text=f"📥 {label}{size_mb}", callback_data=f"file:{f.id}"))
         if len(row) == 2:
             keyboard.append(row)
             row = []
@@ -68,12 +82,14 @@ def season_episodes_keyboard(content_id: int, season_id: int, episodes: List[Epi
 
 
 def episode_qualities_keyboard(season_id: int, files: List[File]) -> InlineKeyboardMarkup:
-    """Inline keyboard showing available qualities for an episode."""
+    """Inline keyboard showing available qualities for an episode, ordered by resolution descending."""
+    sorted_files = sorted(files, key=_quality_sort_key, reverse=True)
     row = []
     keyboard = []
-    for f in files:
+    for f in sorted_files:
         size_mb = f" ({f.file_size_bytes // (1024 * 1024)}MB)" if f.file_size_bytes else ""
-        row.append(InlineKeyboardButton(text=f"📥 {f.quality or 'Watch'}{size_mb}", callback_data=f"file:{f.id}"))
+        label = f.quality if f.quality and f.quality != "Unknown" else "Watch HD"
+        row.append(InlineKeyboardButton(text=f"📥 {label}{size_mb}", callback_data=f"file:{f.id}"))
         if len(row) == 2:
             keyboard.append(row)
             row = []

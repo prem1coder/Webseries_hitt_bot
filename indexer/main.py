@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from database.connection import init_db
+from database.config import get_settings
+from database.connection import check_db_ready, dispose_engine
 from indexer.telegram.client import start_telethon_client, stop_telethon_client
 from indexer.services.indexer_service import IndexerService
 
@@ -12,8 +13,12 @@ logger = logging.getLogger("indexer")
 
 
 async def main():
-    logger.info("Initializing database schema...")
-    await init_db()
+    settings = get_settings()
+    settings.validate_for_environment()
+
+    logger.info("Checking database readiness...")
+    await check_db_ready()
+    logger.info("Database schema and connectivity verified.")
 
     logger.info("Connecting to Telegram MTProto Client...")
     client = await start_telethon_client()
@@ -23,6 +28,7 @@ async def main():
         await indexer.run_historical_crawl()
     finally:
         await stop_telethon_client()
+        await dispose_engine()
 
 
 if __name__ == "__main__":

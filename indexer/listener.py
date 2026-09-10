@@ -4,7 +4,7 @@ from telethon import TelegramClient, events
 from telethon.tl.types import Message
 
 from database.config import get_settings
-from database.connection import get_db_session, init_db
+from database.connection import get_db_session, check_db_ready, dispose_engine
 from database.repositories.content_repo import ContentRepository
 from database.repositories.file_repo import FileRepository
 from indexer.telegram.client import start_telethon_client, stop_telethon_client
@@ -29,12 +29,19 @@ async def register_listener(client: TelegramClient):
             lookup_channel = int(target_channel)
 
         entity = await client.get_entity(lookup_channel)
-        channel_id = getattr(entity, "id", target_channel)
-        if hasattr(entity, "id") and not str(channel_id).startswith("-100"):
-            channel_id = int(f"-100{channel_id}")
+        channel_id = getattr(entity, "id", None)
+        if channel_id is None:
+            raise ValueError(f"Resolved entity has no ID: {entity}")
+
+        channel_id_str = str(channel_id)
+        if not channel_id_str.startswith("-100"):
+            channel_id = int(f"-100{abs(int(channel_id))}")
+        else:
+            channel_id = int(channel_id)
+        logger.info(f"Successfully resolved canonical archive channel ID: {channel_id}")
     except Exception as e:
-        logger.warning(f"Could not resolve entity '{target_channel}' directly on startup ({e}). Listening with configured ID.")
-        channel_id = target_channel
+        logger.critical(f"Failed to resolve archive channel entity for '{target_channel}': {e}. Hard failing listener startup.")
+        raise RuntimeError(f"Cannot start listener: archive channel '{target_channel}' could not be resolved.") from e
 
     indexer_service = IndexerService(client)
 
@@ -74,8 +81,11 @@ async def register_listener(client: TelegramClient):
 
 
 async def main():
-    logger.info("Initializing database...")
-    await init_db()
+    settings.validate_for_environment()
+    logger.info("Checking database readiness...")
+    if not await check_db_ready():
+        logger.critical("Database is not ready. Failing listener startup.")
+        raise RuntimeError("Database readiness check failed on listener startup.")
 
     logger.info("Starting Telethon client...")
     client = await start_telethon_client()
@@ -87,6 +97,7 @@ async def main():
         await client.run_until_disconnected()
     finally:
         await stop_telethon_client()
+        await dispose_engine()
 
 
 if __name__ == "__main__":

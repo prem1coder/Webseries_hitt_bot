@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from aiogram import Router, types, F, Bot
 from database.config import get_settings
 from database.connection import get_db_session
@@ -20,10 +21,27 @@ router = Router(name="callbacks_router")
 settings = get_settings()
 
 
+def _parse_callback_id(data: str, expected_prefix: str) -> Optional[int]:
+    """Safely parse integer ID from callback data with prefix check."""
+    if not data or not data.startswith(f"{expected_prefix}:"):
+        return None
+    parts = data.split(":", 1)
+    if len(parts) != 2:
+        return None
+    raw_id = parts[1].strip()
+    if not raw_id.isdigit():
+        return None
+    parsed_id = int(raw_id)
+    return parsed_id if parsed_id > 0 else None
+
+
 @router.callback_query(F.data.startswith("content:"))
 async def handle_content_selection(callback: types.CallbackQuery):
     """Handle clicking a movie or series from search results."""
-    content_id = int(callback.data.split(":")[1])
+    content_id = _parse_callback_id(callback.data, "content")
+    if not content_id:
+        await callback.answer("❌ Malformed content request.", show_alert=True)
+        return
 
     async with get_db_session() as session:
         content_repo = ContentRepository(session)
@@ -69,7 +87,10 @@ async def handle_content_selection(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("season:"))
 async def handle_season_selection(callback: types.CallbackQuery):
     """Handle clicking a season in a series."""
-    season_id = int(callback.data.split(":")[1])
+    season_id = _parse_callback_id(callback.data, "season")
+    if not season_id:
+        await callback.answer("❌ Malformed season request.", show_alert=True)
+        return
 
     async with get_db_session() as session:
         content_repo = ContentRepository(session)
@@ -97,7 +118,10 @@ async def handle_season_selection(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("episode:"))
 async def handle_episode_selection(callback: types.CallbackQuery):
     """Handle clicking an episode in a season."""
-    episode_id = int(callback.data.split(":")[1])
+    episode_id = _parse_callback_id(callback.data, "episode")
+    if not episode_id:
+        await callback.answer("❌ Malformed episode request.", show_alert=True)
+        return
 
     async with get_db_session() as session:
         content_repo = ContentRepository(session)
@@ -125,39 +149,71 @@ async def handle_episode_selection(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("file:") | F.data.startswith("verify:"))
 async def handle_file_selection(callback: types.CallbackQuery, bot: Bot):
-    """Handle selecting a file quality with mandatory channel membership check."""
-    prefix, file_id_str = callback.data.split(":", 1)
-    file_id = int(file_id_str)
-    user_id = callback.from_user.id
-
-    # 1. Check Channel Membership
-    is_member = await MembershipService.check_membership(bot, user_id)
-
-    if not is_member:
-        if prefix == "verify":
-            await callback.answer("❌ You have not joined the channel yet! Please join first.", show_alert=True)
-        else:
-            await callback.answer()
-
-        invite_link = settings.MAIN_CHANNEL_INVITE_LINK or "https://t.me"
-        text = (
-            "⚠️ **Channel Membership Required**\n\n"
-            "To access high-speed streaming and downloads, please join our official Telegram channel first.\n\n"
-            "After joining, click **'Verify Membership'** below!"
-        )
-        keyboard = membership_required_keyboard(invite_link, file_id)
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    """
+    Handle selecting a file quality.
+    SECURITY FLOW:
+    1. Defensively parse callback data and reject malformed inputs.
+    2. Load file and verify relationship integrity FIRST.
+    3. Verify active channel membership.
+    4. Issue signed download token ONLY after verifying file existence and membership.
+    NOTE: Signed URL acts as a bearer capability for its TTL. Telegram identity is verified at issuance.
+    """
+    if not callback.data or ":" not in callback.data:
+        await callback.answer("❌ Malformed request.", show_alert=True)
         return
 
-    # 2. Member verified -> Generate secure expiring download token
+    parts = callback.data.split(":", 1)
+    prefix = parts[0]
+    raw_file_id = parts[1].strip()
+
+    if not raw_file_id.isdigit():
+        await callback.answer("❌ Invalid file ID.", show_alert=True)
+        return
+
+    file_id = int(raw_file_id)
+    if file_id <= 0:
+        await callback.answer("❌ Invalid file ID.", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+
     async with get_db_session() as session:
         file_repo = FileRepository(session)
         file_obj = await file_repo.get_by_id(file_id)
 
-        if not file_obj:
-            await callback.answer("❌ File not found.", show_alert=True)
+        # Step 1: Prove resource exists and has integrity BEFORE checking membership
+        if not file_obj or not file_obj.content:
+            await callback.answer("❌ File not found or no longer available.", show_alert=True)
             return
 
+        # Step 2: Check Channel Membership
+        is_member = await MembershipService.check_membership(bot, user_id)
+
+        if not is_member:
+            invite_link = settings.MAIN_CHANNEL_INVITE_LINK
+            if not invite_link or not invite_link.startswith("http"):
+                logger.critical("MAIN_CHANNEL_INVITE_LINK is missing or not a valid URL. Refusing fallback.")
+                await callback.answer(
+                    "❌ Channel configuration error. Please contact the administrator.",
+                    show_alert=True
+                )
+                return
+
+            if prefix == "verify":
+                await callback.answer("❌ You have not joined the channel yet! Please join first.", show_alert=True)
+            else:
+                await callback.answer()
+
+            text = (
+                "⚠️ **Channel Membership Required**\n\n"
+                "To access high-speed streaming and downloads, please join our official Telegram channel first.\n\n"
+                "After joining, click **'Verify Membership'** below!"
+            )
+            keyboard = membership_required_keyboard(invite_link, file_id)
+            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            return
+
+        # Step 3: Member verified and file verified -> Issue secure expiring bearer token
         token = TokenService.generate_download_token(file_id=file_obj.id, user_id=user_id)
         download_url = f"{settings.base_web_url}/download/{token}"
 

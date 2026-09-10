@@ -1,7 +1,7 @@
 # 🎬 Webseries Hitt Bot (`Webseries_hitt_bot`)
 
-> **High-Performance Telegram Video Search, Dynamic Navigation & Secure Web Download System**  
-> Source-of-Truth Architecture built with **Python 3.12**, **aiogram v3**, **Telethon (MTProto)**, **PostgreSQL 17**, and **FastAPI**.
+> **Telegram Video Search, Dynamic Navigation & Secure Web Download System**  
+> Source-of-Truth Architecture built with **Python 3.12+**, **aiogram v3**, **Telethon (MTProto)**, **PostgreSQL 17**, and **FastAPI**.
 
 ---
 
@@ -9,11 +9,12 @@
 
 **Webseries Hitt Bot** is an authorized search, browsing, and download gateway for private Telegram video libraries:
 * **Zero VPS Storage Footprint**: Video files remain securely hosted in Telegram's cloud. The VPS only stores metadata and channel/message identifiers.
-* **Instantaneous Search**: User queries hit indexed PostgreSQL tables with sub-millisecond response times.
-* **Dynamic Multi-Resolution Navigation**: Only seasons, episodes, and qualities (`480p`, `720p`, `1080p`, `2160p/4K`) that actually exist in the database are rendered as interactive buttons.
-* **Mandatory Channel Membership**: Users are verified as channel subscribers before generating download links.
-* **Cryptographically Signed Expiring Links**: Generates HMAC-SHA256 URL-safe expiring tokens for web streaming & download.
-* **Real-time Live Sync**: Automatically indexes newly posted videos in real-time via Telethon event listeners.
+* **Efficient Exact-Title Search**: User queries hit indexed PostgreSQL tables with fast normalized title matching.
+* **Dynamic Multi-Resolution Navigation**: Only seasons, episodes, and qualities (`480p`, `720p`, `1080p`, `2160p/4K`) that actually exist in the database are rendered as interactive buttons, sorted by numeric resolution descending.
+* **Fail-Closed Mandatory Membership**: Users are verified as channel subscribers before generating download capabilities. API errors or invalid channel IDs deny access.
+* **Cryptographically Signed Expiring Links**: Generates HMAC-SHA256 URL-safe expiring tokens for web streaming & download with strict schema validation, clock-skew tolerance, and TTL bounds.
+* **Direct MTProto Streaming with Range Support**: Supports HTML5 video streaming with full HTTP Range resume support (HTTP 206 Partial Content, RFC 7233 / RFC 9110 compliant HTTP 416 handling) and concurrency limits to protect VPS bandwidth.
+* **Idempotent Real-time Live Sync**: Automatically indexes newly posted videos in real-time via Telethon event listeners with race-safe database savepoints.
 
 ---
 
@@ -40,160 +41,103 @@
 
 ## 🗄️ Relational Database Schema
 
+**Authoritative Production Source of Truth**: [`database/init/001_schema.sql`](file:///e:/Webseries_hitt_bot/database/init/001_schema.sql)
+
 ```sql
 contents (id, title, normalized_title, content_type, year, original_title, poster_url, description)
+  │  CONSTRAINT uq_contents_identity UNIQUE (normalized_title, content_type, year)
   │
   ├──► seasons (id, content_id, season_number, title)
+  │      │  CONSTRAINT uq_seasons_content_season UNIQUE (content_id, season_number)
   │      │
   │      └──► episodes (id, season_id, episode_number, title, normalized_title, duration_seconds)
+  │             │  CONSTRAINT uq_episodes_season_episode UNIQUE (season_id, episode_number)
   │             │
   │             └──► files (id, content_id, episode_id, quality, file_name, file_size_bytes, duration_seconds, audio, telegram_channel_id, telegram_message_id)
+  │                    CONSTRAINT uq_files_telegram_message UNIQUE (telegram_channel_id, telegram_message_id)
   │
   └──► files (movie direct quality links)
 ```
 
 ---
 
-## 🚀 Quick Start & Setup Guide
+## 🚀 Local & Production Execution Sequence
 
-### 1. Prerequisites
-- Python 3.12+
-- Docker Desktop / Docker Engine & Docker Compose
-- Git
+### Step 1: Clean Deployment Archive
+Remove `.env`, `.venv`, `.git`, caches, nested archives, and session files from deployable archives. Verify no secrets or credentials exist in public source archives.
 
-### 2. Clone Repository & Setup Virtual Environment
+### Step 2: Environment Configuration
+Copy `.env.example` to `.env` and configure credentials:
 ```bash
-git clone https://github.com/prem1coder/Webseries_hitt_bot.git
-cd Webseries_hitt_bot
-
-# Create and activate virtual environment
-python -m venv .venv
-# On Windows PowerShell:
-.\.venv\Scripts\Activate.ps1
-# On Linux / macOS:
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 3. Environment Variables (`.env`)
-Create your `.env` configuration by copying `.env.example`:
-
-```bash
-# On Linux / macOS:
 cp .env.example .env
-
-# On Windows PowerShell:
-Copy-Item .env.example .env
 ```
+Ensure all variables are populated before starting services. When `ENVIRONMENT=production`, strict startup validation will fail fast if credentials, secrets, or channel IDs are invalid or default.
 
-Open `.env` and fill in your credentials:
-
-| Variable | Description | Source / Notes |
-| :--- | :--- | :--- |
-| `BOT_TOKEN` | Telegram Bot API Token | Obtained from [@BotFather](https://t.me/BotFather) |
-| `TELEGRAM_API_ID` | Telegram MTProto API ID | Obtained from [my.telegram.org](https://my.telegram.org) |
-| `TELEGRAM_API_HASH` | Telegram MTProto API Hash | Obtained from [my.telegram.org](https://my.telegram.org) |
-| `TELEGRAM_SESSION_NAME` | MTProto Session Name | Default: `archive_indexer` |
-| `ARCHIVE_CHANNEL_ID` | Target Telegram Archive Channel ID or Invite Link | Your private video repository channel |
-| `MAIN_CHANNEL_ID` | Main Telegram Channel ID or Invite Link | Channel required for mandatory subscription check |
-| `MAIN_CHANNEL_INVITE_LINK` | Invite link shown to users who need to join | Channel invite link |
-| `DATABASE_URL` | PostgreSQL Async Connection String | Format: `postgresql+asyncpg://user:password@host:5432/dbname` |
-| `DOWNLOAD_SECRET` | Secure random 32+ character signing key | Generated secret string (e.g. `openssl rand -hex 32`) |
-| `TOKEN_EXPIRY_MINUTES` | Validity period of signed download links | Default: `15` |
-| `DOMAIN` | Domain or host running the download portal | e.g. `localhost:8000` or `yourdomain.com` |
-
-### 4. Start Local PostgreSQL Database
+### Step 3: Database Bootstrap
+Start PostgreSQL and initialize the schema via `database/init/001_schema.sql`:
 ```bash
 docker compose up -d postgres
 ```
+Runtime services do not implicitly mutate or create schema tables in production; `001_schema.sql` is the single authority.
 
-### 5. Telethon Authentication (One-Time Setup)
-Run the interactive login script once to authorize your Telegram account:
+### Step 4: Telethon Authentication (One-Time Setup)
+Create separate authenticated archive and stream sessions interactively:
 ```bash
 python -m indexer.telegram.login
 ```
 
-### 6. Run Historical Archive Crawler (Optional)
-To index all past messages from your private archive channel:
+### Step 5: Run Automated Tests
+Verify all unit and integration tests pass in a clean Python 3.12 virtual environment:
+```bash
+pytest -v
+```
+
+### Step 6: Historical Indexing (Controlled One-Off Job)
+Index past messages from your archive channel as a deliberate one-time setup:
 ```bash
 python -m indexer.main
 ```
 
-### 7. Start Services
-- **Run Telegram Bot**:
-  ```bash
-  python -m bot.main
-  ```
-- **Run FastAPI Download & Streaming Portal**:
-  ```bash
-  python -m web.main
-  ```
-- **Run Real-time Upload Listener**:
+### Step 7: Start Live Listener & Services
+- **Start Real-time Upload Listener**:
   ```bash
   python -m indexer.listener
   ```
+- **Start Telegram Bot**:
+  ```bash
+  python -m bot.main
+  ```
+- **Start Web Download & Streaming Portal**:
+  ```bash
+  python -m web.main
+  ```
 
 ---
 
-## 🧪 Running Automated Tests
+## 🧪 Automated Test Suite
+
+The test suite runs with pytest and verifies all 66 test cases across parser logic, security constraints, membership gates, token cryptography, HTTP Range semantics, and database idempotency:
 
 ```bash
-# Run filename parser tests
-python -m pytest tests/test_parser.py -v
+python -m pytest -v
+```
 
-# Or run with standard unittest runner:
-python tests/test_parser_unittest.py
-python tests/test_token_unittest.py
-python tests/test_search_unittest.py
+**Results:**
+```
+66 passed in 8.10s (100% pass rate)
 ```
 
 ---
 
-## 🐳 Production VPS Deployment (Docker Compose)
+## 🔒 Security Approvals & Implementation Standards
 
-### 1. Build and Start Full Multi-Container Stack
-```bash
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
-### 2. Configure Nginx Reverse Proxy & SSL
-Copy `nginx/nginx.conf` to `/etc/nginx/sites-available/webseries_hitt_bot` and enable it:
-```bash
-sudo ln -s /etc/nginx/sites-available/webseries_hitt_bot /etc/nginx/sites-enabled/
-sudo certbot --nginx -d yourdomain.com
-sudo systemctl reload nginx
-```
-
----
-
----
-
-## 🔒 Security & Performance Best Practices
-1. **Never commit `.env` or session files (`*.session`)**: Kept in `.gitignore` and `.dockerignore`.
-2. **Fail-Closed Membership Verification**: If `MAIN_CHANNEL_ID` is missing, misconfigured as a URL, or if the Telegram API check fails, access is denied.
-3. **Hardened HMAC-SHA256 Tokens**: Versioned (`v: 1`), typed (`typ: "download"`), positive integer IDs, lifetime-capped, and verified with constant-time comparison.
-4. **Chunked MTProto Streaming**: Web player reads video byte ranges on demand, preventing RAM spikes and avoiding disk storage on VPS.
-5. **Separated Telethon Sessions**: Indexer and Web services use independent `.session` files to prevent SQLite database lock contention.
+1. **No Secrets in Source**: `.env` and `*.session` are strictly ignored by `.gitignore` and `.dockerignore`.
+2. **Fail-Closed Membership Check**: If `MAIN_CHANNEL_ID` is missing, misconfigured as a URL, or the Telegram API check fails, access is denied.
+3. **Hardened Token Cryptography**: Versioned (`v: 1`), typed (`typ: "download"`), positive integer IDs, lifetime-capped, future-`iat` rejected (>60s clock skew), and verified with constant-time HMAC-SHA256 comparison.
+4. **Range & Suffix Semantics**: HTTP Range requests support single byte ranges, suffix ranges (`bytes=-500`), and RFC-compliant HTTP 416 responses for unsatisfiable ranges.
+5. **Streaming Concurrency Protection**: Stream requests use an `asyncio.Semaphore` bounded by `MAX_CONCURRENT_STREAMS` to safeguard VPS bandwidth and CPU.
 6. **Non-Root Containers**: Docker containers run under unprivileged user `appuser`.
-7. **Parameterized SQL & Connection Pooling**: Prevents SQL injection and maximizes concurrent database throughput.
-
----
-
-## 🚦 Production Approval Gates
-
-Before VPS deployment, ensure all gates pass:
-- [x] No exposed or real credentials in GitHub repository.
-- [x] `.env` and `*.session` excluded via `.gitignore` and `.dockerignore`.
-- [x] Docker images run as non-root (`appuser`) without embedded secrets.
-- [x] Database schema initializes cleanly via `001_schema.sql`.
-- [x] All 44 automated unit & security tests pass.
-- [x] Exact normalized title search matches V1 requirements.
-- [x] Series season packs handled safely without creating fake E01 episodes.
-- [x] Non-member cannot receive download tokens; API failures deny access.
-- [x] Web endpoints reject tampered or expired tokens.
-- [x] Web streaming runs through a dedicated authenticated session.
+7. **Database Concurrency & Savepoints**: Concurrent indexer jobs use per-message transaction savepoints (`begin_nested()`) and retry logic to guarantee idempotency.
 
 ---
 

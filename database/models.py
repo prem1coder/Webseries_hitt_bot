@@ -1,6 +1,9 @@
 from datetime import datetime
 from typing import List, Optional
-from sqlalchemy import BigInteger, SmallInteger, Integer, String, Text, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger, SmallInteger, Integer, String, Text, DateTime,
+    ForeignKey, UniqueConstraint, CheckConstraint, func
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -10,6 +13,10 @@ class Base(DeclarativeBase):
 
 class Content(Base):
     __tablename__ = "contents"
+    __table_args__ = (
+        CheckConstraint("content_type IN ('movie', 'series')", name="ck_contents_content_type"),
+        UniqueConstraint("normalized_title", "content_type", "year", name="uq_contents_identity"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -66,7 +73,7 @@ class Episode(Base):
 class File(Base):
     __tablename__ = "files"
     __table_args__ = (
-        UniqueConstraint("telegram_channel_id", "telegram_message_id", name="idx_telegram_message_unique"),
+        UniqueConstraint("telegram_channel_id", "telegram_message_id", name="uq_files_telegram_message"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)

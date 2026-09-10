@@ -5,7 +5,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from database.config import get_settings
-from database.connection import init_db
+from database.connection import check_db_ready, dispose_engine
 from bot.handlers import start_router, search_router, callbacks_router
 from bot.services.membership import MembershipService
 
@@ -18,6 +18,7 @@ logger = logging.getLogger("bot")
 
 async def main():
     settings = get_settings()
+    settings.validate_for_environment()
 
     if not settings.BOT_TOKEN:
         logger.critical("Fatal: BOT_TOKEN is not set in environment or configuration.")
@@ -32,8 +33,9 @@ async def main():
     else:
         logger.info(f"Configured MAIN_CHANNEL_ID for membership verification: {main_channel_id}")
 
-    logger.info("Initializing database schema...")
-    await init_db()
+    logger.info("Checking database readiness...")
+    await check_db_ready()
+    logger.info("Database schema and connectivity verified.")
 
     logger.info("Starting Telegram Bot (Webseries_hitt_bot)...")
     bot = Bot(
@@ -48,8 +50,13 @@ async def main():
     dp.include_router(search_router)
     dp.include_router(callbacks_router)
 
-    logger.info("Bot started and listening for updates...")
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    try:
+        logger.info("Bot started and listening for updates...")
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    finally:
+        logger.info("Shutting down bot and disposing database engine...")
+        await bot.session.close()
+        await dispose_engine()
 
 
 if __name__ == "__main__":

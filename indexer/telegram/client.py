@@ -22,16 +22,19 @@ def get_telethon_client(session_name: Optional[str] = None) -> TelegramClient:
     return _telethon_clients[session]
 
 
-async def start_telethon_client(session_name: Optional[str] = None) -> TelegramClient:
+async def start_telethon_client(session_name: Optional[str] = None, require_authorized: bool = True) -> TelegramClient:
     """Connect and start the Telethon client for the given session."""
     client = get_telethon_client(session_name)
     if not client.is_connected():
         await client.connect()
-        if not await client.is_user_authorized():
-            logger.warning(
-                f"Telethon client '{session_name or 'default'}' is not authorized! "
-                "Please run the interactive login script once to authenticate."
-            )
+    
+    if require_authorized and not await client.is_user_authorized():
+        err_msg = (
+            f"Telethon client '{session_name or 'default'}' is not authorized! "
+            "Please run the interactive login script once to authenticate before starting the service."
+        )
+        logger.error(err_msg)
+        raise RuntimeError(err_msg)
     return client
 
 

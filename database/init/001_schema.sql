@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS contents (
     poster_url TEXT,
     description TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_contents_identity UNIQUE (normalized_title, content_type, year)
 );
 
 -- 2. Seasons Table (for series)
@@ -24,7 +25,7 @@ CREATE TABLE IF NOT EXISTS seasons (
     season_number SMALLINT NOT NULL,
     title TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(content_id, season_number)
+    CONSTRAINT uq_seasons_content_season UNIQUE(content_id, season_number)
 );
 
 -- 3. Episodes Table (episodes within seasons)
@@ -36,7 +37,7 @@ CREATE TABLE IF NOT EXISTS episodes (
     normalized_title TEXT,
     duration_seconds INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(season_id, episode_number)
+    CONSTRAINT uq_episodes_season_episode UNIQUE(season_id, episode_number)
 );
 
 -- 4. Files Table (each quality/version and Telegram message reference)
@@ -52,11 +53,10 @@ CREATE TABLE IF NOT EXISTS files (
     telegram_channel_id BIGINT NOT NULL,
     telegram_message_id BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(telegram_channel_id, telegram_message_id)
+    CONSTRAINT uq_files_telegram_message UNIQUE (telegram_channel_id, telegram_message_id)
 );
 
 -- 5. Indexes for fast normalized search & multi-quality resolution
 CREATE INDEX IF NOT EXISTS idx_contents_normalized_title ON contents(normalized_title);
 CREATE INDEX IF NOT EXISTS idx_files_content_quality ON files(content_id, quality);
 CREATE INDEX IF NOT EXISTS idx_files_episode_quality ON files(episode_id, quality);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_message_unique ON files(telegram_channel_id, telegram_message_id);

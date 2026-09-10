@@ -1,6 +1,7 @@
 import logging
+import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Set
 from telethon.tl.types import (
     Message,
     DocumentAttributeFilename,
@@ -11,6 +12,10 @@ from telethon.tl.types import (
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_VIDEO_EXTENSIONS: Set[str] = {
+    ".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".wmv", ".m4v", ".ts"
+}
+
 
 @dataclass
 class ExtractedMediaInfo:
@@ -20,7 +25,7 @@ class ExtractedMediaInfo:
     file_size_bytes: int
     duration_seconds: Optional[int] = None
     mime_type: Optional[str] = None
-    media_type: str = "document"  # 'video', 'document', 'audio'
+    media_type: str = "video"
 
 
 class TelegramMessageInspector:
@@ -28,14 +33,15 @@ class TelegramMessageInspector:
     def inspect_message(channel_id: int, message: Message) -> Optional[ExtractedMediaInfo]:
         """
         Inspect a Telethon Message object and extract media details.
-        Returns ExtractedMediaInfo if the message contains valid video/document media, else None.
+        Accepts actual video media only.
+        Rejects audio-only, images, photos, and unsupported documents.
+        Returns None if message is not video or if a reliable filename cannot be extracted.
         """
         if not message or not message.media:
             return None
 
-        # Check if media is document / video
+        # Check if media is a document
         if not isinstance(message.media, MessageMediaDocument):
-            # Check if direct video attribute
             if not getattr(message.media, "document", None):
                 return None
 
@@ -43,38 +49,68 @@ class TelegramMessageInspector:
         if not document:
             return None
 
+        file_size = getattr(document, "size", 0)
+        if not file_size or file_size <= 0:
+            return None
+
+        mime = getattr(document, "mime_type", None) or ""
+        mime_lower = mime.lower()
+
+        # Reject audio or image MIME types immediately
+        if mime_lower.startswith("audio/") or mime_lower.startswith("image/"):
+            logger.debug(f"Skipping message {message.id}: audio/image MIME type ({mime})")
+            return None
+
         file_name: Optional[str] = None
         duration_seconds: Optional[int] = None
-        media_type = "document"
+        has_video_attr = False
+        has_audio_attr = False
 
         # Iterate over document attributes
-        if hasattr(document, "attributes"):
+        if hasattr(document, "attributes") and document.attributes:
             for attr in document.attributes:
                 if isinstance(attr, DocumentAttributeFilename):
-                    file_name = attr.file_name
+                    if attr.file_name and attr.file_name.strip():
+                        file_name = attr.file_name.strip()
                 elif isinstance(attr, DocumentAttributeVideo):
-                    duration_seconds = int(attr.duration)
-                    media_type = "video"
+                    has_video_attr = True
+                    duration_seconds = int(getattr(attr, "duration", 0) or 0)
                 elif isinstance(attr, DocumentAttributeAudio):
-                    if duration_seconds is None:
-                        duration_seconds = int(attr.duration)
-                    media_type = "audio"
+                    has_audio_attr = True
 
-        # Fallback 1: Check caption or message text for filename
+        # Reject audio-only documents
+        if has_audio_attr and not has_video_attr:
+            logger.debug(f"Skipping message {message.id}: Document has audio attribute without video")
+            return None
+
+        # Fallback: Extract filename from caption/message text if not present in attributes
+        if not file_name and message.message:
+            candidate = message.message.strip().split("\n")[0].strip()
+            _, ext = os.path.splitext(candidate)
+            if ext.lower() in SUPPORTED_VIDEO_EXTENSIONS:
+                file_name = candidate
+
+        # If a reliable filename cannot be extracted, skip rather than fabricating one
         if not file_name:
-            if message.message and len(message.message.strip()) > 0:
-                first_line = message.message.strip().split("\n")[0].strip()
-                if "." in first_line:
-                    file_name = first_line
+            logger.debug(f"Skipping message {message.id}: No reliable filename could be extracted")
+            return None
 
-        # Fallback 2: Generate default filename
-        if not file_name:
-            mime_type = getattr(document, "mime_type", "video/mp4")
-            ext = "mp4" if "mp4" in mime_type else "mkv"
-            file_name = f"video_msg_{message.id}.{ext}"
+        # Check extension of extracted filename
+        _, ext = os.path.splitext(file_name)
+        ext_lower = ext.lower()
 
-        file_size = getattr(document, "size", 0)
-        mime = getattr(document, "mime_type", None)
+        is_video_by_ext = ext_lower in SUPPORTED_VIDEO_EXTENSIONS
+        is_video_by_mime = mime_lower.startswith("video/")
+        
+        # Must be verified as video either by video attribute, video mime, or supported video extension
+        if not (has_video_attr or is_video_by_mime or is_video_by_ext):
+            logger.debug(f"Skipping message {message.id}: Unsupported media format for file '{file_name}' ({mime})")
+            return None
+
+        # Explicitly reject known non-video extensions even if mime is generic
+        if ext_lower in {".mp3", ".flac", ".wav", ".aac", ".ogg", ".pdf", ".txt", ".zip", ".rar", ".apk", ".exe", ".docx"}:
+            logger.debug(f"Skipping message {message.id}: Rejected non-video extension '{ext_lower}'")
+            return None
 
         return ExtractedMediaInfo(
             channel_id=channel_id,
@@ -82,6 +118,6 @@ class TelegramMessageInspector:
             file_name=file_name,
             file_size_bytes=file_size,
             duration_seconds=duration_seconds,
-            mime_type=mime,
-            media_type=media_type
+            mime_type=mime or "video/mp4",
+            media_type="video"
         )

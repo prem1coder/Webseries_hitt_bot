@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import urllib.parse
 from typing import Optional, Tuple
@@ -28,26 +29,123 @@ def make_safe_content_disposition(filename: str, disposition: str = "attachment"
     return f'{disposition}; filename="{ascii_safe}"; filename*=UTF-8\'\'{encoded_utf8}'
 
 
-def parse_range_header(range_header: Optional[str], file_size: Optional[int]) -> Optional[Tuple[int, Optional[int]]]:
-    """Parse and validate HTTP Range header (e.g. bytes=0-1023)."""
+def get_safe_media_type(filename: str) -> str:
+    """Derive safe MIME type from trusted extension; fallback to application/octet-stream."""
+    _, ext = os.path.splitext((filename or "").lower())
+    mime_map = {
+        ".mp4": "video/mp4",
+        ".mkv": "video/x-matroska",
+        ".webm": "video/webm",
+        ".avi": "video/x-msvideo",
+        ".mov": "video/quicktime",
+        ".m4v": "video/x-m4v",
+        ".ts": "video/mp2t",
+    }
+    return mime_map.get(ext, "application/octet-stream")
+
+
+def process_range_header(
+    range_header: Optional[str],
+    file_size: Optional[int]
+) -> Tuple[int, Optional[int], Optional[str], int]:
+    """
+    Parse and validate HTTP Range header (RFC 7233 / RFC 9110).
+    Returns (offset_bytes, end_byte, content_range_header_value, status_code).
+    Raises HTTPException(416) for unsatisfiable or malformed requests.
+    """
     if not range_header or not range_header.startswith("bytes="):
-        return None
-    try:
-        range_val = range_header[6:].strip()
-        parts = range_val.split("-")
-        if len(parts) != 2:
-            return None
-        start = int(parts[0]) if parts[0] else 0
-        end = int(parts[1]) if parts[1] else None
-        if start < 0 or (file_size and start >= file_size):
-            return None
-        if end is not None and file_size and end >= file_size:
+        return 0, (file_size - 1) if file_size else None, None, status.HTTP_200_OK
+
+    range_spec = range_header[6:].strip()
+
+    # Reject multi-range requests per V1 specification
+    if "," in range_spec:
+        raise HTTPException(
+            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+            detail="Multi-range requests are not supported",
+            headers={"Content-Range": f"bytes */{file_size if file_size else '*'}"}
+        )
+
+    if "-" not in range_spec:
+        raise HTTPException(
+            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+            detail="Malformed range specification",
+            headers={"Content-Range": f"bytes */{file_size if file_size else '*'}"}
+        )
+
+    if not file_size or file_size <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+            detail="Range unsatisfiable for unknown or empty file size",
+            headers={"Content-Range": "bytes */*"}
+        )
+
+    parts = range_spec.split("-", 1)
+    raw_start, raw_end = parts[0].strip(), parts[1].strip()
+
+    # Suffix range: bytes=-500
+    if not raw_start and raw_end:
+        if not raw_end.isdigit():
+            raise HTTPException(
+                status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+                detail="Invalid suffix range",
+                headers={"Content-Range": f"bytes */{file_size}"}
+            )
+        suffix_len = int(raw_end)
+        if suffix_len <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+                detail="Suffix length must be positive",
+                headers={"Content-Range": f"bytes */{file_size}"}
+            )
+        start = max(0, file_size - suffix_len)
+        end = file_size - 1
+
+    # Open-ended range: bytes=100-
+    elif raw_start and not raw_end:
+        if not raw_start.isdigit():
+            raise HTTPException(
+                status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+                detail="Invalid start range",
+                headers={"Content-Range": f"bytes */{file_size}"}
+            )
+        start = int(raw_start)
+        if start >= file_size:
+            raise HTTPException(
+                status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+                detail="Range start exceeds file size",
+                headers={"Content-Range": f"bytes */{file_size}"}
+            )
+        end = file_size - 1
+
+    # Closed range: bytes=100-200
+    elif raw_start and raw_end:
+        if not raw_start.isdigit() or not raw_end.isdigit():
+            raise HTTPException(
+                status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+                detail="Non-numeric range bounds",
+                headers={"Content-Range": f"bytes */{file_size}"}
+            )
+        start = int(raw_start)
+        end = int(raw_end)
+        if start >= file_size or start > end:
+            raise HTTPException(
+                status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+                detail="Range start invalid or exceeds file size",
+                headers={"Content-Range": f"bytes */{file_size}"}
+            )
+        if end >= file_size:
             end = file_size - 1
-        if end is not None and end < start:
-            return None
-        return (start, end)
-    except Exception:
-        return None
+    else:
+        # bytes=-
+        raise HTTPException(
+            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
+            detail="Empty range bounds",
+            headers={"Content-Range": f"bytes */{file_size}"}
+        )
+
+    content_range = f"bytes {start}-{end}/{file_size}"
+    return start, end, content_range, status.HTTP_206_PARTIAL_CONTENT
 
 
 @router.get("/health")
@@ -126,7 +224,8 @@ async def view_download_page(request: Request, token: str):
 async def stream_video_file(token: str, range: Optional[str] = Header(None)):
     """
     Direct MTProto video streaming endpoint for HTML5 player without saving video to VPS disk.
-    Strictly uses file metadata from database and ignores client query params.
+    Strictly uses file metadata from database and derives safe MIME types.
+    Protected by concurrency limits.
     """
     payload = TokenService.verify_download_token(token)
     if not payload:
@@ -151,35 +250,28 @@ async def stream_video_file(token: str, range: Optional[str] = Header(None)):
         file_size = file_obj.file_size_bytes
         file_name = file_obj.file_name or "video.mp4"
 
+    media_type = get_safe_media_type(file_name)
     headers = {
         "Accept-Ranges": "bytes",
         "Content-Disposition": make_safe_content_disposition(file_name, disposition="inline"),
     }
 
-    range_bounds = parse_range_header(range, file_size)
-    offset_bytes = range_bounds[0] if range_bounds else 0
+    offset_bytes, end_byte, content_range, status_code = process_range_header(range, file_size)
 
-    if file_size:
-        if range_bounds:
-            end_byte = range_bounds[1] if range_bounds[1] is not None else file_size - 1
-            content_length = (end_byte - offset_bytes) + 1
-            headers["Content-Range"] = f"bytes {offset_bytes}-{end_byte}/{file_size}"
-            headers["Content-Length"] = str(content_length)
-            status_code = status.HTTP_206_PARTIAL_CONTENT
-        else:
-            headers["Content-Length"] = str(file_size)
-            status_code = status.HTTP_200_OK
-    else:
-        status_code = status.HTTP_200_OK
+    if file_size and end_byte is not None:
+        content_length = (end_byte - offset_bytes) + 1
+        headers["Content-Length"] = str(content_length)
+        if content_range:
+            headers["Content-Range"] = content_range
 
     media_generator = TelegramStreamer.stream_media_chunks(channel_id, message_id, offset_bytes=offset_bytes)
-    return StreamingResponse(media_generator, status_code=status_code, media_type="video/mp4", headers=headers)
+    return StreamingResponse(media_generator, status_code=status_code, media_type=media_type, headers=headers)
 
 
 @router.get("/file/{token}")
-async def download_direct_file(token: str):
+async def download_direct_file(token: str, range: Optional[str] = Header(None)):
     """
-    Direct attachment download endpoint.
+    Direct attachment download endpoint with consistent HTTP Range processing.
     Strictly uses database file identifiers and safe Content-Disposition headers.
     """
     payload = TokenService.verify_download_token(token)
@@ -208,8 +300,14 @@ async def download_direct_file(token: str):
         "Content-Disposition": make_safe_content_disposition(file_name, disposition="attachment"),
         "Accept-Ranges": "bytes",
     }
-    if file_size:
-        headers["Content-Length"] = str(file_size)
 
-    media_generator = TelegramStreamer.stream_media_chunks(channel_id, message_id)
-    return StreamingResponse(media_generator, media_type="application/octet-stream", headers=headers)
+    offset_bytes, end_byte, content_range, status_code = process_range_header(range, file_size)
+
+    if file_size and end_byte is not None:
+        content_length = (end_byte - offset_bytes) + 1
+        headers["Content-Length"] = str(content_length)
+        if content_range:
+            headers["Content-Range"] = content_range
+
+    media_generator = TelegramStreamer.stream_media_chunks(channel_id, message_id, offset_bytes=offset_bytes)
+    return StreamingResponse(media_generator, status_code=status_code, media_type="application/octet-stream", headers=headers)

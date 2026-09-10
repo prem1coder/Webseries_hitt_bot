@@ -1,7 +1,9 @@
 from typing import List, Optional
+import re
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from database.models import Content, Season, Episode, File
 
 
@@ -12,7 +14,6 @@ class ContentRepository:
     @staticmethod
     def normalize_title(title: str) -> str:
         """Normalize title for consistent matching: lowercase, alphanumeric and single spaces."""
-        import re
         cleaned = re.sub(r"[^\w\s]", " ", title.lower())
         return re.sub(r"\s+", " ", cleaned).strip()
 
@@ -123,6 +124,8 @@ class ContentRepository:
         )
         if year is not None:
             stmt = stmt.where(Content.year == year)
+        else:
+            stmt = stmt.where(Content.year.is_(None))
 
         result = await self.session.execute(stmt)
         content = result.scalar_one_or_none()
@@ -137,8 +140,15 @@ class ContentRepository:
                 poster_url=poster_url,
                 description=description
             )
-            self.session.add(content)
-            await self.session.flush()
+            try:
+                async with self.session.begin_nested():
+                    self.session.add(content)
+                    await self.session.flush()
+            except IntegrityError:
+                result = await self.session.execute(stmt)
+                content = result.scalar_one_or_none()
+                if not content:
+                    raise
 
         return content
 
@@ -164,8 +174,15 @@ class ContentRepository:
                 season_number=season_number,
                 title=title or f"Season {season_number}"
             )
-            self.session.add(season)
-            await self.session.flush()
+            try:
+                async with self.session.begin_nested():
+                    self.session.add(season)
+                    await self.session.flush()
+            except IntegrityError:
+                result = await self.session.execute(stmt)
+                season = result.scalar_one_or_none()
+                if not season:
+                    raise
 
         return season
 
@@ -195,7 +212,14 @@ class ContentRepository:
                 normalized_title=self.normalize_title(ep_title),
                 duration_seconds=duration_seconds
             )
-            self.session.add(episode)
-            await self.session.flush()
+            try:
+                async with self.session.begin_nested():
+                    self.session.add(episode)
+                    await self.session.flush()
+            except IntegrityError:
+                result = await self.session.execute(stmt)
+                episode = result.scalar_one_or_none()
+                if not episode:
+                    raise
 
         return episode

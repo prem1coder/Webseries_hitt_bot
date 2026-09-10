@@ -39,6 +39,11 @@ async def check_db_ready() -> bool:
     return True
 
 
+async def dispose_engine() -> None:
+    """Close all pooled database connections cleanly on application shutdown."""
+    await engine.dispose()
+
+
 @asynccontextmanager
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Provide a transactional async session scope."""

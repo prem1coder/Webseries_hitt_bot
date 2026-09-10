@@ -29,6 +29,7 @@ class IndexerService:
     ) -> Optional[int]:
         """
         Process a single message: inspect media -> parse filename -> upsert into database.
+        Validates media before creating any database entities.
         Returns file_id if indexed, None if skipped or not a valid media item.
         """
         media_info = TelegramMessageInspector.inspect_message(channel_id, message)
@@ -44,6 +45,14 @@ class IndexerService:
         # Parse filename
         parsed = FilenameParser.parse(media_info.file_name)
 
+        # Validate series media before creating DB records to prevent orphan Content entries
+        if parsed.content_type == "series" and parsed.episode_number is None:
+            logger.warning(
+                f"Skipping series file without parsed episode number (possible season pack/ambiguous): "
+                f"'{media_info.file_name}' (Msg: {channel_id}:{message.id})"
+            )
+            return None
+
         # 1. Find or create Content
         content = await content_repo.find_or_create_content(
             title=parsed.title,
@@ -53,15 +62,8 @@ class IndexerService:
 
         episode_id: Optional[int] = None
 
-        # 2. If Series, only create Season and Episode when a real episode number was parsed
+        # 2. If Series, create Season and Episode
         if parsed.content_type == "series":
-            if parsed.episode_number is None:
-                logger.warning(
-                    f"Skipping series file without parsed episode number (possible season pack/ambiguous): "
-                    f"'{media_info.file_name}' (Msg: {channel_id}:{message.id})"
-                )
-                return None
-
             season_num = parsed.season_number or 1
             episode_num = parsed.episode_number
 
@@ -106,7 +108,7 @@ class IndexerService:
     ) -> Dict[str, int]:
         """
         Crawl historical messages from the private archive channel.
-        Handles rate limits and batch commits safely.
+        Handles rate limits and batch commits safely with per-message savepoints.
         """
         target_channel = channel_id or self.settings.ARCHIVE_CHANNEL_ID
         logger.info(f"Starting historical archive crawl for channel: {target_channel}...")
@@ -125,7 +127,6 @@ class IndexerService:
 
             entity = await self.client.get_entity(lookup_channel)
             actual_channel_id = getattr(entity, "id", lookup_channel)
-            # Ensure proper channel ID format
             if hasattr(entity, "id") and not str(actual_channel_id).startswith("-100"):
                 actual_channel_id = int(f"-100{actual_channel_id}")
         except Exception as e:
@@ -140,33 +141,49 @@ class IndexerService:
 
             async for message in self.client.iter_messages(entity, limit=limit, reverse=True):
                 stats["scanned"] += 1
-                try:
-                    file_id = await self.index_single_message(
-                        channel_id=actual_channel_id,
-                        message=message,
-                        content_repo=content_repo,
-                        file_repo=file_repo
-                    )
-                    if file_id:
-                        stats["indexed"] += 1
-                    else:
-                        stats["skipped"] += 1
+                retries = 0
+                while retries <= self.settings.FLOOD_WAIT_MAX_RETRIES:
+                    try:
+                        async with session.begin_nested():
+                            file_id = await self.index_single_message(
+                                channel_id=actual_channel_id,
+                                message=message,
+                                content_repo=content_repo,
+                                file_repo=file_repo
+                            )
+                        if file_id:
+                            stats["indexed"] += 1
+                        else:
+                            stats["skipped"] += 1
 
-                    current_batch_count += 1
-                    if current_batch_count >= batch_size:
-                        await session.commit()
-                        logger.info(
-                            f"Batch committed: Scanned {stats['scanned']} | Indexed {stats['indexed']} | "
-                            f"Skipped {stats['skipped']}"
+                        current_batch_count += 1
+                        if current_batch_count >= batch_size:
+                            await session.commit()
+                            logger.info(
+                                f"Batch committed: Scanned {stats['scanned']} | Indexed {stats['indexed']} | "
+                                f"Skipped {stats['skipped']}"
+                            )
+                            current_batch_count = 0
+                        break
+
+                    except errors.FloodWaitError as fwe:
+                        retries += 1
+                        if retries > self.settings.FLOOD_WAIT_MAX_RETRIES:
+                            logger.error(
+                                f"Exceeded max FloodWait retries ({self.settings.FLOOD_WAIT_MAX_RETRIES}) on message {message.id}."
+                            )
+                            stats["errors"] += 1
+                            break
+                        wait_seconds = min(fwe.seconds + 1, 60)
+                        logger.warning(
+                            f"FloodWait on message {message.id} (retry {retries}/{self.settings.FLOOD_WAIT_MAX_RETRIES}). Sleeping {wait_seconds}s..."
                         )
-                        current_batch_count = 0
+                        await asyncio.sleep(wait_seconds)
 
-                except errors.FloodWaitError as fwe:
-                    logger.warning(f"Telegram FloodWait encountered! Sleeping for {fwe.seconds} seconds...")
-                    await asyncio.sleep(fwe.seconds + 1)
-                except Exception as e:
-                    stats["errors"] += 1
-                    logger.error(f"Error indexing message {message.id}: {e}", exc_info=False)
+                    except Exception as e:
+                        stats["errors"] += 1
+                        logger.error(f"Error indexing message {message.id}: {e}", exc_info=False)
+                        break
 
             # Commit any remaining items
             await session.commit()

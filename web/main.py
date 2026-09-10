@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from database.config import get_settings
-from database.connection import check_db_ready, init_db
+from database.connection import check_db_ready, dispose_engine
 from web.routes import download_router
 
 logging.basicConfig(
@@ -20,13 +20,16 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("FastAPI Web Server starting...")
+    settings.validate_for_environment()
     try:
         await check_db_ready()
         logger.info("Database schema and connectivity verified.")
     except Exception as e:
-        logger.warning(f"Database readiness check encountered issue ({e}). Running bootstrap fallback...")
-        await init_db()
+        logger.critical(f"Database readiness check failed: {e}. Refusing to start web server.")
+        raise RuntimeError(f"Database readiness check failed: {e}") from e
     yield
+    logger.info("Disposing database engine on shutdown...")
+    await dispose_engine()
     logger.info("FastAPI Web Server stopped.")
 
 
